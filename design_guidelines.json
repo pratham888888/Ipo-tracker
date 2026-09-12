@@ -1,0 +1,188 @@
+{
+  "app_name": "Indian IPO Terminal",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A professional, data-dense, and highly legible terminal-grade market application prioritizing clarity and trust.",
+  "color": {
+    "light": {
+      "surface": "#FFFFFF",
+      "onSurface": "#111111",
+      "surfaceSecondary": "#F4F4F5",
+      "onSurfaceSecondary": "#27272A",
+      "surfaceTertiary": "#E4E4E7",
+      "onSurfaceTertiary": "#3F3F46",
+      "surfaceInverse": "#18181B",
+      "onSurfaceInverse": "#FFFFFF",
+      "brand": "#18181B",
+      "onBrand": "#FFFFFF",
+      "brandPrimary": "#18181B",
+      "onBrandPrimary": "#FFFFFF",
+      "brandSecondary": "#52525B",
+      "onBrandSecondary": "#FFFFFF",
+      "brandTertiary": "#E4E4E7",
+      "onBrandTertiary": "#18181B",
+      "muted": "#71717A",
+      "success": "#16A34A",
+      "onSuccess": "#FFFFFF",
+      "warning": "#CA8A04",
+      "onWarning": "#FFFFFF",
+      "error": "#DC2626",
+      "onError": "#FFFFFF",
+      "info": "#4B5563",
+      "onInfo": "#FFFFFF",
+      "border": "#E4E4E7",
+      "borderStrong": "#D4D4D8",
+      "divider": "#F4F4F5",
+      "gain": "#16A34A",
+      "loss": "#DC2626",
+      "statusUpcoming": "#CA8A04",
+      "statusOpen": "#16A34A",
+      "statusClosed": "#71717A",
+      "statusListed": "#18181B"
+    },
+    "dark": {
+      "surface": "#09090B",
+      "onSurface": "#FAFAFA",
+      "surfaceSecondary": "#18181B",
+      "onSurfaceSecondary": "#E4E4E7",
+      "surfaceTertiary": "#27272A",
+      "onSurfaceTertiary": "#D4D4D8",
+      "surfaceInverse": "#FAFAFA",
+      "onSurfaceInverse": "#09090B",
+      "brand": "#FAFAFA",
+      "onBrand": "#09090B",
+      "brandPrimary": "#FAFAFA",
+      "onBrandPrimary": "#09090B",
+      "brandSecondary": "#A1A1AA",
+      "onBrandSecondary": "#09090B",
+      "brandTertiary": "#3F3F46",
+      "onBrandTertiary": "#FAFAFA",
+      "muted": "#A1A1AA",
+      "success": "#22C55E",
+      "onSuccess": "#000000",
+      "warning": "#FACC15",
+      "onWarning": "#000000",
+      "error": "#EF4444",
+      "onError": "#000000",
+      "info": "#9CA3AF",
+      "onInfo": "#000000",
+      "border": "#27272A",
+      "borderStrong": "#3F3F46",
+      "divider": "#18181B",
+      "gain": "#22C55E",
+      "loss": "#EF4444",
+      "statusUpcoming": "#FACC15",
+      "statusOpen": "#22C55E",
+      "statusClosed": "#A1A1AA",
+      "statusListed": "#FAFAFA"
+    }
+  },
+  "typography": {
+    "displayFontFamily": "Space Grotesk",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Handle spacing correctly. Do not have extra spaces where not required. Use compact spacing inside scannable widgets for data density.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 4,
+    "md": 8,
+    "lg": 12,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Feather",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": [
+      "Avoid glassmorphism for this terminal/data-dense app to ensure absolute clarity."
+    ],
+    "dont's": [
+      "No blur overlays behind text that decrease readability."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Dashboard",
+      "purpose": "A dense market overview presenting quick IPO summaries and top movers.",
+      "states": {
+        "loading": "Centered spinner",
+        "empty": "No active market data available.",
+        "error": "Unable to fetch market data. Retry."
+      },
+      "layout": "Grid of summary stat cards (Highest GMP, Closing Today). Clean horizontal scrolling lists for featured IPOs. Strict alignment and minimal chrome."
+    },
+    {
+      "name": "IPO List",
+      "purpose": "Comprehensive directory of all IPOs with powerful segmenting and filtering.",
+      "states": {
+        "loading": "Skeleton list rows",
+        "empty": "No IPOs match your filters.",
+        "error": "Failed to load IPO list."
+      },
+      "layout": "Sticky segmented control for tabs (Open/Upcoming/Closed/Listed) and a Mainboard/SME toggle chip. Each card displays tight tabular data (Issue Size, Price Band, GMP) with status indicators."
+    },
+    {
+      "name": "IPO Detail",
+      "purpose": "Deep dive into a specific IPO with fundamentals, subscription metrics, and AI analysis.",
+      "states": {
+        "loading": "Skeleton page blocks",
+        "empty": "Data unavailable for this IPO.",
+        "error": "Failed to load IPO details."
+      },
+      "layout": "Header with company logo and issue status. Stacked blocks for GMP Trend Chart, Subscription Bar Breakdown, Timeline, and a dedicated AI Business Summary text block. Use bottom sheet for allotment probability calculator."
+    }
+  ],
+  "components": {
+    "status_tabbed_ipo_card": "A compact card. Top row: Logo, Company Name, Status Badge. Bottom row: 3-column grid for Price, GMP (with gain indicator), and Issue Size. Minimal padding (md).",
+    "summary_stat_card": "Small square widget (2-col grid). Title in muted text, large metric number (Space Grotesk), small trend indicator (+X%).",
+    "gmp_trend_chart": "Clean line chart. No gradients. Solid line with points. X-axis for dates, Y-axis for GMP value.",
+    "subscription_bar": "Stacked horizontal bar or multi-segment progress bar showing QIB, NII, Retail quotas. Legend below.",
+    "filter_bottom_sheet": "Gorhom bottom sheet holding grouped checkboxes and sliders for issue size, GMP %, and sectors."
+  },
+  "images": {
+    "logo_zomato": {
+      "url": "https://images.unsplash.com/photo-1653389527532-884074ac1c65?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MjJ8MHwxfHNlYXJjaHwxfHxab21hdG8lMjBsb2dvJTIwcG5nfGVufDB8fHx8MTc4OTIyODM0Mnww&ixlib=rb-4.1.0&q=85",
+      "alt": "Zomato Logo"
+    },
+    "logo_bajaj": {
+      "url": "https://images.unsplash.com/photo-1649734927719-9ce8abaf042c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHwxfHxCYWphaiUyMEhvdXNpbmclMjBGaW5hbmNlJTIwbG9nbyUyMHBuZ3xlbnwwfHx8fDE3ODIzOTM2NzB8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Bajaj Housing Finance Logo"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Implement both Light and Dark modes reading from the structured color tokens.",
+    "Strict adherence to no blue/indigo/purple colors. Use the provided near-black/dark-gray baseline with exact semantic green (gain) and red (loss).",
+    "Use 'Plus Jakarta Sans' for standard UI text and 'Space Grotesk' for display numbers, metrics, and large titles to create a financial terminal feel.",
+    "Ensure the UI layout is highly data-dense. Reduce unnecessary padding inside metric widgets.",
+    "Status indicators (Upcoming, Open, Closed, Listed) must use the exact status tokens provided.",
+    "Avoid glassmorphism to prioritize data readability.",
+    "Use @gorhom/bottom-sheet for the Screeners and Filters view."
+  ]
+}
