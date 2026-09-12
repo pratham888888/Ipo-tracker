@@ -99,12 +99,15 @@ export type AllotmentResult = {
   price?: number;
   application_shares?: number;
   application_amount?: number;
-  probability_pct?: number;
+  probability?: number | null;
+  probability_pct?: number | null;
   expected_lots?: number;
   expected_shares?: number;
   method?: string;
   note?: string;
   used_total_subscription_proxy?: boolean;
+  category_subscription_used?: number | null;
+  subscription_source?: string | null;
 };
 
 export function useAllotmentMutation(slug: string) {
@@ -116,6 +119,38 @@ export function useAllotmentMutation(slug: string) {
       lot_size?: number;
       price?: number;
     }) => apiFetch<AllotmentResult>(`/ipos/${slug}/allotment`, { method: "POST", body }),
+  });
+}
+
+export function useSubscriptionHistory(slug: string) {
+  return useQuery({
+    queryKey: ["subscription-history", slug],
+    queryFn: () =>
+      apiFetch<{
+        points: {
+          ts: string;
+          label: string;
+          total: number | null;
+          qib: number | null;
+          snii: number | null;
+          bnii: number | null;
+          retail: number | null;
+          nii: number | null;
+        }[];
+      }>(`/ipos/${slug}/subscription-history`),
+    enabled: !!slug,
+  });
+}
+
+export function useRefresh() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/refresh", { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["ipos"] });
+      qc.invalidateQueries({ queryKey: ["meta"] });
+    },
   });
 }
 

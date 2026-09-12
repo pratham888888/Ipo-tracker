@@ -5,6 +5,7 @@ export type Gmp = {
   source: string | null;
   source_updated_label: string | null;
   timestamp: string | null;
+  unofficial?: boolean;
 };
 
 export type Subscription = {
@@ -18,6 +19,23 @@ export type Subscription = {
   shareholder: number | null;
   source: string | null;
   timestamp: string | null;
+  category_wise_available?: boolean;
+  source_updated_label?: string | null;
+};
+
+export type FieldSources = {
+  metadata?: string | null;
+  gmp?: string | null;
+  subscription?: string | null;
+  registrar?: string | null;
+  lot_size?: string | null;
+  documents?: string | null;
+};
+
+export type IpoDocument = {
+  title: string;
+  url: string;
+  source?: string;
 };
 
 export type Ipo = {
@@ -47,12 +65,17 @@ export type Ipo = {
   issue_size_estimated: boolean;
   issue_size_shares: number | null;
   registrar: string | null;
+  registrar_allotment_url?: string | null;
   lead_managers: string | null;
   sector: string | null;
+  industry?: string | null;
+  documents?: IpoDocument[];
   gmp: Gmp;
   subscription: Subscription;
+  field_sources?: FieldSources;
   source: string;
   fetched_at: string;
+  meta?: SourceMeta;
 };
 
 export type SourceMeta = {
@@ -62,6 +85,7 @@ export type SourceMeta = {
   last_error: string | null;
   last_updated_iso: string | null;
   last_updated_label: string | null;
+  gmp_disclaimer?: string;
 };
 
 export type Screener = {
@@ -76,7 +100,22 @@ export type Filters = {
   status?: string | null;
   ipo_type?: string | null;
   min_issue_size?: number | null;
+  max_issue_size?: number | null;
   min_gmp_pct?: number | null;
+  max_gmp_pct?: number | null;
+  min_subscription?: number | null;
+  max_subscription?: number | null;
+  subscription_field?: "total" | "qib" | "snii" | "bnii" | "retail" | "nii" | null;
+  sector?: string | null;
+  industry?: string | null;
+  open_date_from?: string | null;
+  open_date_to?: string | null;
+  close_date_from?: string | null;
+  close_date_to?: string | null;
+  allotment_date_from?: string | null;
+  allotment_date_to?: string | null;
+  listing_date_from?: string | null;
+  listing_date_to?: string | null;
   search?: string | null;
   sort?: string;
   order?: "asc" | "desc";

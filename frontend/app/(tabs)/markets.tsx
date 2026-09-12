@@ -17,24 +17,34 @@ import {
   Txt,
 } from "@/src/components/ui";
 import { fmtCrore, fmtPct } from "@/src/format";
-import { useDashboard } from "@/src/queries";
+import { useDashboard, useRefresh } from "@/src/queries";
 import { fonts, useTheme, type ThemeColors } from "@/src/theme";
 
 export default function MarketsScreen() {
   const insets = useSafeAreaInsets();
   const { data, isLoading, isError, refetch, isRefetching } = useDashboard();
-  const [tab, setTab] = useState<"open" | "upcoming" | "closed">("open");
+  const refresh = useRefresh();
+  const [tab, setTab] = useState<"open" | "upcoming" | "closed" | "listed">("open");
 
   const cards = data?.cards;
   const list = data ? data[tab] : [];
+
+  const onRefresh = () => {
+    refresh.mutate(undefined, { onSettled: () => refetch() });
+  };
 
   return (
     <View style={{ flex: 1 }}>
       <AppHeader
         title="IPO Terminal"
-        subtitle={data?.meta?.last_updated_label ? `Updated ${data.meta.last_updated_label}` : "Indian IPOs"}
+        subtitle={
+          data?.meta?.last_updated_label
+            ? `Updated ${data.meta.last_updated_label}`
+            : "Indian IPOs"
+        }
         right={
           <>
+            <IconButton name="refresh-cw" onPress={onRefresh} testID="dash-refresh" />
             <IconButton name="calendar" onPress={() => router.push("/calendar")} testID="open-calendar" />
             <IconButton name="settings" onPress={() => router.push("/settings")} testID="open-settings" />
           </>
@@ -48,14 +58,17 @@ export default function MarketsScreen() {
       ) : (
         <ScrollView
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24, gap: 16 }}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+          refreshControl={
+            <RefreshControl refreshing={isRefetching || refresh.isPending} onRefresh={onRefresh} />
+          }
           testID="markets-scroll"
         >
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
             <StatCard label="Open" value={String(cards?.open ?? 0)} accent="statusOpen" icon="activity" />
             <StatCard label="Upcoming" value={String(cards?.upcoming ?? 0)} accent="statusUpcoming" icon="clock" />
             <StatCard label="Closing Today" value={String(cards?.closing_today ?? 0)} accent="error" icon="alert-circle" />
-            <StatCard label="Recently Closed" value={String(cards?.closed ?? 0)} accent="statusClosed" icon="check-circle" />
+            <StatCard label="Closed" value={String(cards?.closed ?? 0)} accent="statusClosed" icon="check-circle" />
+            <StatCard label="Listed" value={String(cards?.listed ?? 0)} accent="statusListed" icon="trending-up" />
           </View>
 
           <View style={{ flexDirection: "row", gap: 10 }}>
@@ -98,8 +111,8 @@ export default function MarketsScreen() {
           ) : null}
 
           <View>
-            <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-              {(["open", "upcoming", "closed"] as const).map((t) => (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              {(["open", "upcoming", "closed", "listed"] as const).map((t) => (
                 <Pressable
                   key={t}
                   onPress={() => setTab(t)}
@@ -127,7 +140,15 @@ export default function MarketsScreen() {
             )}
           </View>
 
-          <SourceFooter provider={data?.meta.provider} label={data?.meta.last_updated_label} />
+          <SourceFooter
+            provider={data?.meta.provider}
+            label={data?.meta.last_updated_label}
+            note={
+              data?.meta.healthy === false
+                ? `Source: ${data?.meta.provider ?? "provider"} (stale cache — last fetch failed)`
+                : undefined
+            }
+          />
           <DisclaimerBanner compact />
         </ScrollView>
       )}

@@ -25,10 +25,12 @@ import {
   useAllotmentMutation,
   useGmpHistory,
   useIpo,
+  useSubscriptionHistory,
   useToggleWatchlist,
   useWatchlist,
 } from "@/src/queries";
 import { useAuth } from "@/src/auth";
+import type { Ipo, Subscription } from "@/src/types";
 import { fonts, makeStyles, useTheme } from "@/src/theme";
 
 export default function IpoDetailScreen() {
@@ -90,13 +92,22 @@ export default function IpoDetailScreen() {
           <Overview ipo={ipo} />
           <GmpTrend slug={slug} />
           <SubscriptionBlock ipo={ipo} />
+          <SubscriptionHistoryBlock slug={slug} />
           <Timeline ipo={ipo} />
           <AllotmentCalculator ipo={ipo} />
           <AnalysisSnapshot ipo={ipo} />
           <AiBusiness slug={slug} enabled={!!ipo} />
           <CheckAllotment ipo={ipo} />
 
-          <SourceFooter provider={ipo.meta?.provider} label={ipo.meta?.last_updated_label} />
+          <SourceFooter
+            provider={ipo.meta?.provider ?? ipo.source}
+            label={ipo.meta?.last_updated_label ?? undefined}
+            note={
+              ipo.field_sources
+                ? `Sources — meta: ${ipo.field_sources.metadata ?? "—"}, GMP: ${ipo.field_sources.gmp ?? "—"} (unofficial), sub: ${ipo.field_sources.subscription ?? "—"}`
+                : undefined
+            }
+          />
           <DisclaimerBanner />
         </ScrollView>
       )}
@@ -105,12 +116,12 @@ export default function IpoDetailScreen() {
 }
 
 // --------------------------------------------------------------------------- //
-function LiveStatus({ ipo }: { ipo: any }) {
+function LiveStatus({ ipo }: { ipo: Ipo }) {
   const g = ipo.gmp ?? {};
   return (
     <Card testID="live-status">
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <Pill text="GMP" />
           <Pill text="Unofficial / indicative" />
         </View>
@@ -122,7 +133,7 @@ function LiveStatus({ ipo }: { ipo: any }) {
         <GmpValue rupees={g.gmp_rupees} percent={g.gmp_percent} size={30} />
       </View>
       <View style={{ flexDirection: "row", marginTop: 14 }}>
-        <KeyValue label="Est. Listing Price" value={fmtRupee(g.implied_listing_price)} />
+        <KeyValue label="Est. Listing Price (GMP-derived)" value={fmtRupee(g.implied_listing_price)} />
         <KeyValue
           label="Est. Listing Gain"
           value={fmtPct(g.gmp_percent)}
@@ -131,14 +142,14 @@ function LiveStatus({ ipo }: { ipo: any }) {
         <KeyValue label="Total Subscription" value={fmtX(ipo.subscription?.total)} />
       </View>
       <Txt size={11} color="muted" style={{ marginTop: 10 }}>
-        Estimated from GMP. GMP is an unofficial market indicator and is not a guarantee of the
-        listing price or gain.
+        Estimated listing price = issue price + GMP (when both available). GMP is an unofficial
+        market indicator and is not a guarantee of the listing price or gain.
       </Txt>
     </Card>
   );
 }
 
-function Overview({ ipo }: { ipo: any }) {
+function Overview({ ipo }: { ipo: Ipo }) {
   return (
     <View>
       <SectionHeader title="Overview" />
@@ -164,6 +175,11 @@ function Overview({ ipo }: { ipo: any }) {
         <View style={s2row}>
           <KeyValue label="Open Date" value={naOr(ipo.open_date_raw)} mono={false} />
           <KeyValue label="Close Date" value={naOr(ipo.close_date_raw)} mono={false} />
+        </View>
+        <Div />
+        <View style={s2row}>
+          <KeyValue label="Allotment" value={naOr(ipo.allotment_date)} mono={false} />
+          <KeyValue label="Listing" value={naOr(ipo.listing_date)} mono={false} />
         </View>
         <Div />
         <View style={s2row}>
@@ -259,15 +275,20 @@ function GmpTrend({ slug }: { slug: string }) {
   );
 }
 
-function SubscriptionBlock({ ipo }: { ipo: any }) {
-  const sub = ipo.subscription ?? {};
+function SubscriptionBlock({ ipo }: { ipo: Ipo }) {
+  const sub = ipo.subscription ?? ({} as Subscription);
   const cats = [
-    { key: "qib", label: "QIB" },
-    { key: "snii", label: "sNII" },
-    { key: "bnii", label: "bNII" },
-    { key: "retail", label: "Retail" },
+    { key: "qib" as const, label: "QIB" },
+    { key: "snii" as const, label: "sNII" },
+    { key: "bnii" as const, label: "bNII" },
+    { key: "nii" as const, label: "NII total" },
+    { key: "retail" as const, label: "Retail" },
+    { key: "employee" as const, label: "Employee" },
+    { key: "shareholder" as const, label: "Shareholder" },
   ];
-  const allNull = cats.every((c) => sub[c.key] == null);
+  const categoryAvailable =
+    sub.category_wise_available === true ||
+    cats.some((c) => sub[c.key] != null);
   return (
     <View>
       <SectionHeader title="Subscription" />
@@ -281,10 +302,9 @@ function SubscriptionBlock({ ipo }: { ipo: any }) {
           </Txt>
         </View>
         <Div />
-        {allNull ? (
+        {!categoryAvailable ? (
           <Txt size={12} color="muted">
-            Category-wise subscription (QIB / sNII / bNII / Retail) is not published by the current
-            data provider. Only the overall subscription multiple is available.
+            Category-wise subscription data is not available from the current source.
           </Txt>
         ) : (
           <View style={{ gap: 8 }}>
@@ -300,12 +320,82 @@ function SubscriptionBlock({ ipo }: { ipo: any }) {
             ))}
           </View>
         )}
+        <Txt size={11} color="muted" style={{ marginTop: 10 }}>
+          Source: {sub.source ?? "—"}
+          {sub.timestamp ? ` · Fetched ${sub.timestamp}` : ""}
+        </Txt>
       </Card>
     </View>
   );
 }
 
-function Timeline({ ipo }: { ipo: any }) {
+function SubscriptionHistoryBlock({ slug }: { slug: string }) {
+  const { colors } = useTheme();
+  const { data, isLoading } = useSubscriptionHistory(slug);
+  const points = data?.points ?? [];
+  const chartData = useMemo(
+    () => points.filter((p) => p.total != null).map((p) => ({ value: p.total as number })),
+    [points],
+  );
+  const hasCategory = points.some(
+    (p) => p.qib != null || p.snii != null || p.bnii != null || p.retail != null,
+  );
+
+  return (
+    <View>
+      <SectionHeader title="Subscription History" />
+      <Card>
+        {isLoading ? (
+          <LoadingState />
+        ) : chartData.length < 2 ? (
+          <View style={{ paddingVertical: 16, alignItems: "center", gap: 6 }}>
+            <Icon name="bar-chart-2" size={22} color="muted" />
+            <Txt size={13} color="muted" style={{ textAlign: "center" }}>
+              {chartData.length === 1
+                ? "Collecting subscription history. Chart appears as more snapshots are recorded."
+                : "Not enough historical subscription snapshots yet."}
+            </Txt>
+            {chartData.length === 1 ? (
+              <Txt size={18} weight="display">
+                {fmtX(chartData[0].value)}
+              </Txt>
+            ) : null}
+          </View>
+        ) : (
+          <>
+            <Txt size={12} color="muted" style={{ marginBottom: 8 }}>
+              Total subscription
+            </Txt>
+            <LineChart
+              data={chartData}
+              color={colors.brandPrimary}
+              thickness={2}
+              hideDataPoints={chartData.length > 20}
+              dataPointsColor={colors.brandPrimary}
+              yAxisColor={colors.border}
+              xAxisColor={colors.border}
+              yAxisTextStyle={{ color: colors.muted, fontSize: 10 }}
+              rulesColor={colors.divider}
+              backgroundColor="transparent"
+              height={150}
+              adjustToWidth
+              initialSpacing={8}
+            />
+            {hasCategory ? (
+              <Txt size={11} color="muted" style={{ marginTop: 10 }}>
+                Category snapshots (QIB / sNII / bNII / Retail) are stored when the provider
+                supplies them. Latest point may include category values even when older points
+                only have totals.
+              </Txt>
+            ) : null}
+          </>
+        )}
+      </Card>
+    </View>
+  );
+}
+
+function Timeline({ ipo }: { ipo: Ipo }) {
   const steps = [
     { label: "Open", value: ipo.open_date_raw },
     { label: "Close", value: ipo.close_date_raw },
@@ -350,51 +440,77 @@ function Timeline({ ipo }: { ipo: any }) {
 }
 
 const CATEGORIES = [
-  { key: "retail", label: "Retail" },
-  { key: "snii", label: "sNII" },
-  { key: "bnii", label: "bNII" },
+  { key: "retail", label: "Retail", subKey: "retail" as const },
+  { key: "snii", label: "sNII", subKey: "snii" as const },
+  { key: "bnii", label: "bNII", subKey: "bnii" as const },
+  { key: "qib", label: "QIB", subKey: "qib" as const },
 ];
 
-function AllotmentCalculator({ ipo }: { ipo: any }) {
-  const { colors } = useTheme();
+function categorySub(ipo: Ipo, key: "retail" | "snii" | "bnii" | "qib"): number | null {
+  const v = ipo.subscription?.[key];
+  return v == null ? null : v;
+}
+
+function AllotmentCalculator({ ipo }: { ipo: Ipo }) {
   const s = useStyles();
   const mut = useAllotmentMutation(ipo.slug);
-  const [category, setCategory] = useState("retail");
+  const [category, setCategory] = useState<"retail" | "snii" | "bnii" | "qib">("retail");
   const [lots, setLots] = useState("1");
   const [lotSize, setLotSize] = useState(ipo.lot_size ? String(ipo.lot_size) : "");
-  const [subMult, setSubMult] = useState(
-    ipo.subscription?.total != null ? String(ipo.subscription.total.toFixed(2)) : "",
-  );
+  const catSub = categorySub(ipo, category);
+  const [subMult, setSubMult] = useState(catSub != null ? String(catSub.toFixed(2)) : "");
   const res = mut.data;
 
-  const calc = () =>
+  const selectCategory = (key: "retail" | "snii" | "bnii" | "qib") => {
+    setCategory(key);
+    const next = categorySub(ipo, key);
+    setSubMult(next != null ? String(next.toFixed(2)) : "");
+  };
+
+  const calc = () => {
+    const parsed = subMult.trim() ? parseFloat(subMult) : undefined;
     mut.mutate({
       category,
       lots: parseInt(lots || "1", 10),
       lot_size: lotSize ? parseFloat(lotSize) : undefined,
-      subscription_multiple: subMult ? parseFloat(subMult) : undefined,
+      // Only send override when user entered a value; never send total as proxy.
+      subscription_multiple: parsed != null && Number.isFinite(parsed) ? parsed : undefined,
     });
+  };
 
   return (
     <View>
       <SectionHeader title="Allotment Probability" />
       <Card>
         <Txt size={12} color="muted" style={{ marginBottom: 12 }}>
-          Estimated probability using the applicable category methodology. Enter details from the
-          RHP where the provider does not supply them.
+          Uses category-specific subscription only (Retail / sNII / bNII). Total subscription is
+          never used as a silent proxy. Results are estimates — not guaranteed.
         </Txt>
 
-        <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
           {CATEGORIES.map((c) => (
             <Chip
               key={c.key}
               label={c.label}
               active={category === c.key}
-              onPress={() => setCategory(c.key)}
+              onPress={() => selectCategory(c.key)}
               testID={`calc-cat-${c.key}`}
             />
           ))}
         </View>
+
+        {catSub == null ? (
+          <Txt size={12} color="warning" style={{ marginBottom: 10 }}>
+            Category-specific subscription for {category.toUpperCase()} is not available from the
+            current source. Enter a verified category multiple manually, or the calculator will
+            refuse to produce a probability.
+          </Txt>
+        ) : (
+          <Txt size={12} color="muted" style={{ marginBottom: 10 }}>
+            Using {category.toUpperCase()} subscription: {fmtX(catSub)} (source:{" "}
+            {ipo.subscription?.source ?? "—"})
+          </Txt>
+        )}
 
         <View style={{ flexDirection: "row", gap: 10 }}>
           <Field label="Lots" value={lots} onChange={setLots} testID="calc-lots" />
@@ -402,7 +518,7 @@ function AllotmentCalculator({ ipo }: { ipo: any }) {
         </View>
         <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
           <Field
-            label="Subscription (x) for category"
+            label={`${category.toUpperCase()} subscription (x)`}
             value={subMult}
             onChange={setSubMult}
             testID="calc-submult"
@@ -428,11 +544,24 @@ function AllotmentCalculator({ ipo }: { ipo: any }) {
                     {res.probability_pct}%
                   </Txt>
                 </View>
+                <Txt size={11} color="warning" weight="semibold">
+                  Not guaranteed.
+                </Txt>
                 <View style={s2row}>
                   <KeyValue label="Application" value={fmtRupee(res.application_amount)} />
                   <KeyValue label="Shares Applied" value={naOr(res.application_shares)} />
                   <KeyValue label="Expected Shares" value={naOr(res.expected_shares)} />
                 </View>
+                <View style={s2row}>
+                  <KeyValue label="Lots" value={naOr(res.lots)} />
+                  <KeyValue label="Lot Size" value={naOr(res.lot_size)} />
+                  <KeyValue label="Expected Lots" value={naOr(res.expected_lots)} />
+                </View>
+                {res.method ? (
+                  <Txt size={11} color="muted">
+                    {res.method}
+                  </Txt>
+                ) : null}
                 <Txt size={11} color="onSurfaceSecondary" style={{ marginTop: 4, lineHeight: 16 }}>
                   {res.note}
                 </Txt>
@@ -484,7 +613,7 @@ function Field({
   );
 }
 
-function AnalysisSnapshot({ ipo }: { ipo: any }) {
+function AnalysisSnapshot({ ipo }: { ipo: Ipo }) {
   const gmpPct = ipo.gmp?.gmp_percent;
   const subX = ipo.subscription?.total;
   const gmpSentiment =
@@ -498,7 +627,9 @@ function AnalysisSnapshot({ ipo }: { ipo: any }) {
     { k: "Profitability", v: "Not available" },
     { k: "Business Quality", v: "Verify in RHP" },
   ];
-  const tone = (v: string): any =>
+  const tone = (
+    v: string,
+  ): "gain" | "loss" | "muted" =>
     v === "Strong" || v === "Positive"
       ? "gain"
       : v === "Negative" || v === "Weak"
@@ -614,7 +745,7 @@ function AiList({
   title: string;
   items: string[];
   icon: string;
-  tone: any;
+  tone: "gain" | "loss" | "muted";
 }) {
   if (!items?.length) return null;
   return (
@@ -638,21 +769,44 @@ function AiList({
   );
 }
 
-function CheckAllotment({ ipo }: { ipo: any }) {
+function CheckAllotment({ ipo }: { ipo: Ipo }) {
   const s = useStyles();
-  const links = [
-    { label: "NSE — Public Issues", url: "https://www.nseindia.com/market-data/all-upcoming-issues-ipo" },
+  const registrarUrl = ipo.registrar_allotment_url;
+  const exchangeLinks = [
+    {
+      label: "NSE — Public Issues",
+      url: "https://www.nseindia.com/market-data/all-upcoming-issues-ipo",
+    },
     { label: "BSE — Public Issues", url: "https://www.bseindia.com/publicissue.html" },
   ];
+
   return (
     <View>
       <SectionHeader title="Check Allotment" />
       <Card>
-        <Txt size={12} color="muted" style={{ marginBottom: 12 }}>
-          Allotment status is checked on the official registrar's portal. Registrar details are not
-          published by the current provider for this IPO — use the official exchange pages below.
-        </Txt>
-        {links.map((l) => (
+        {registrarUrl ? (
+          <>
+            <Txt size={12} color="muted" style={{ marginBottom: 12 }}>
+              Official registrar allotment status portal for {ipo.registrar ?? "this IPO"}.
+            </Txt>
+            <Pressable
+              style={[s.linkRow, { borderTopWidth: 0 }]}
+              testID="check-allotment-registrar"
+              onPress={() => WebBrowser.openBrowserAsync(registrarUrl)}
+            >
+              <Icon name="external-link" size={16} color="brandPrimary" />
+              <Txt size={13} weight="bold" style={{ flex: 1 }} color="onSurface">
+                Check Allotment
+              </Txt>
+              <Icon name="chevron-right" size={16} color="muted" />
+            </Pressable>
+          </>
+        ) : (
+          <Txt size={12} color="muted" style={{ marginBottom: 12 }}>
+            Official allotment link not available yet.
+          </Txt>
+        )}
+        {exchangeLinks.map((l) => (
           <Pressable
             key={l.url}
             style={s.linkRow}

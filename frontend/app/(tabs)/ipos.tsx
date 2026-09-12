@@ -56,14 +56,34 @@ export default function IposScreen() {
     status: filters.status ?? undefined,
     ipo_type: filters.ipo_type ?? undefined,
     min_issue_size: filters.min_issue_size ?? undefined,
+    max_issue_size: filters.max_issue_size ?? undefined,
     min_gmp_pct: filters.min_gmp_pct ?? undefined,
+    max_gmp_pct: filters.max_gmp_pct ?? undefined,
+    min_subscription: filters.min_subscription ?? undefined,
+    max_subscription: filters.max_subscription ?? undefined,
+    subscription_field: filters.subscription_field ?? undefined,
+    sector: filters.sector ?? undefined,
+    industry: filters.industry ?? undefined,
+    open_date_from: filters.open_date_from ?? undefined,
+    open_date_to: filters.open_date_to ?? undefined,
+    close_date_from: filters.close_date_from ?? undefined,
+    close_date_to: filters.close_date_to ?? undefined,
+    allotment_date_from: filters.allotment_date_from ?? undefined,
+    allotment_date_to: filters.allotment_date_to ?? undefined,
+    listing_date_from: filters.listing_date_from ?? undefined,
+    listing_date_to: filters.listing_date_to ?? undefined,
     search: search || undefined,
     sort: filters.sort,
     order: filters.order,
   });
 
   const activeCount =
-    (filters.min_issue_size != null ? 1 : 0) + (filters.min_gmp_pct != null ? 1 : 0);
+    (filters.min_issue_size != null ? 1 : 0) +
+    (filters.max_issue_size != null ? 1 : 0) +
+    (filters.min_gmp_pct != null ? 1 : 0) +
+    (filters.max_gmp_pct != null ? 1 : 0) +
+    (filters.min_subscription != null ? 1 : 0) +
+    (filters.max_subscription != null ? 1 : 0);
 
   return (
     <View style={{ flex: 1 }}>

@@ -15,7 +15,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
 
-from allotment import compute_allotment
+from allotment import compute_allotment, resolve_category_subscription
 from providers import get_provider
 
 ROOT_DIR = Path(__file__).parent
@@ -34,9 +34,30 @@ DB_NAME = os.environ["DB_NAME"]
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "openai")
 AI_MODEL = os.environ.get("AI_MODEL", "gpt-5.4")
-IPO_DATA_PROVIDER = os.environ.get("IPO_DATA_PROVIDER", "downstox")
-IPO_API_BASE_URL = os.environ.get("IPO_API_BASE_URL", "https://downstox.com")
+IPO_DATA_PROVIDER = os.environ.get("IPO_DATA_PROVIDER", "composite")
+IPO_API_BASE_URL = os.environ.get("IPO_API_BASE_URL", "")
 IPO_API_KEY = os.environ.get("IPO_API_KEY")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+CORS_ORIGINS_RAW = os.environ.get("CORS_ORIGINS", FRONTEND_URL)
+
+
+def _parse_cors_origins(raw: str) -> list[str]:
+    """Never allow '*' with credentialed requests."""
+    parts = [p.strip() for p in (raw or "").split(",") if p.strip()]
+    cleaned = [p for p in parts if p != "*"]
+    if not cleaned:
+        cleaned = [FRONTEND_URL or "http://localhost:3000"]
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    out: list[str] = []
+    for o in cleaned:
+        if o not in seen:
+            seen.add(o)
+            out.append(o)
+    return out
+
+
+CORS_ORIGINS = _parse_cors_origins(CORS_ORIGINS_RAW)
 
 REFRESH_INTERVAL_SECONDS = 300  # 5 min background refresh
 CACHE_TTL_SECONDS = 180  # lazy refresh threshold
@@ -96,20 +117,31 @@ async def _record_history(normalized: list[dict]) -> None:
                     }
                 )
         sub = ipo.get("subscription") or {}
-        if sub.get("total") is not None:
+        has_sub = any(
+            sub.get(k) is not None
+            for k in ("total", "qib", "snii", "bnii", "nii", "retail", "employee", "shareholder")
+        )
+        if has_sub:
             last_s = await db.subscription_history.find_one(
                 {"slug": slug}, sort=[("ts", -1)], projection={"_id": 0}
             )
-            if last_s is None or last_s.get("total") != sub.get("total"):
+            snapshot = {
+                "total": sub.get("total"),
+                "qib": sub.get("qib"),
+                "snii": sub.get("snii"),
+                "bnii": sub.get("bnii"),
+                "nii": sub.get("nii"),
+                "retail": sub.get("retail"),
+                "employee": sub.get("employee"),
+                "shareholder": sub.get("shareholder"),
+                "source": sub.get("source"),
+            }
+            changed = last_s is None or any(
+                last_s.get(k) != snapshot.get(k) for k in snapshot
+            )
+            if changed:
                 await db.subscription_history.insert_one(
-                    {
-                        "slug": slug,
-                        "total": sub.get("total"),
-                        "qib": sub.get("qib"),
-                        "nii": sub.get("nii"),
-                        "retail": sub.get("retail"),
-                        "ts": now,
-                    }
+                    {"slug": slug, **snapshot, "ts": now}
                 )
 
 
@@ -321,6 +353,7 @@ async def _source_meta() -> dict:
         "last_error": meta.get("last_error"),
         "last_updated_iso": last.isoformat() if last else None,
         "last_updated_label": ist_label(last) if last else None,
+        "gmp_disclaimer": "GMP is unofficial / indicative and not a guarantee of listing price.",
     }
 
 
@@ -344,12 +377,22 @@ def _sort_key(ipo: dict, field: str):
         "gmp_rupees": g.get("gmp_rupees"),
         "open_date": ipo.get("open_date"),
         "close_date": ipo.get("close_date"),
+        "allotment_date": ipo.get("allotment_date"),
+        "listing_date": ipo.get("listing_date"),
         "subscription": s.get("total"),
+        "subscription_qib": s.get("qib"),
+        "subscription_snii": s.get("snii"),
+        "subscription_bnii": s.get("bnii"),
+        "subscription_retail": s.get("retail"),
         "updated": ipo.get("updated_at"),
         "company": (ipo.get("company_name") or "").lower(),
     }
     v = mapping.get(field)
     return (v is None, v if v is not None else "")
+
+
+def _sub_value(ipo: dict, key: str) -> Optional[float]:
+    return (ipo.get("subscription") or {}).get(key)
 
 
 @api.get("/ipos")
@@ -360,11 +403,38 @@ async def list_ipos(
     min_issue_size: Optional[float] = None,
     max_issue_size: Optional[float] = None,
     min_gmp_pct: Optional[float] = None,
+    max_gmp_pct: Optional[float] = None,
+    min_subscription: Optional[float] = None,
+    max_subscription: Optional[float] = None,
+    subscription_field: str = "total",
     sector: Optional[str] = None,
+    industry: Optional[str] = None,
+    open_date_from: Optional[str] = None,
+    open_date_to: Optional[str] = None,
+    close_date_from: Optional[str] = None,
+    close_date_to: Optional[str] = None,
+    allotment_date_from: Optional[str] = None,
+    allotment_date_to: Optional[str] = None,
+    listing_date_from: Optional[str] = None,
+    listing_date_to: Optional[str] = None,
     sort: str = "gmp_pct",
     order: str = "desc",
 ):
     ipos = await _all_ipos()
+    sub_field = (subscription_field or "total").lower()
+    if sub_field not in ("total", "qib", "snii", "bnii", "retail", "nii"):
+        sub_field = "total"
+
+    def in_range(value: Optional[str], start: Optional[str], end: Optional[str]) -> bool:
+        if start is None and end is None:
+            return True
+        if value is None:
+            return False
+        if start is not None and value < start:
+            return False
+        if end is not None and value > end:
+            return False
+        return True
 
     def keep(ipo: dict) -> bool:
         if status and ipo.get("status") != status:
@@ -375,7 +445,7 @@ async def list_ipos(
             q = search.lower()
             hay = " ".join(
                 str(ipo.get(k) or "")
-                for k in ("company_name", "symbol", "slug")
+                for k in ("company_name", "symbol", "slug", "sector", "industry")
             ).lower()
             if q not in hay:
                 return False
@@ -387,11 +457,31 @@ async def list_ipos(
             v = ipo.get("issue_size_crore")
             if v is None or v > max_issue_size:
                 return False
+        gmp_pct = (ipo.get("gmp") or {}).get("gmp_percent")
         if min_gmp_pct is not None:
-            v = (ipo.get("gmp") or {}).get("gmp_percent")
-            if v is None or v < min_gmp_pct:
+            if gmp_pct is None or gmp_pct < min_gmp_pct:
                 return False
-        if sector and (ipo.get("sector") or "") != sector:
+        if max_gmp_pct is not None:
+            if gmp_pct is None or gmp_pct > max_gmp_pct:
+                return False
+        sub_v = _sub_value(ipo, sub_field)
+        if min_subscription is not None:
+            if sub_v is None or sub_v < min_subscription:
+                return False
+        if max_subscription is not None:
+            if sub_v is None or sub_v > max_subscription:
+                return False
+        if sector and sector.lower() not in (ipo.get("sector") or "").lower():
+            return False
+        if industry and industry.lower() not in (ipo.get("industry") or "").lower():
+            return False
+        if not in_range(ipo.get("open_date"), open_date_from, open_date_to):
+            return False
+        if not in_range(ipo.get("close_date"), close_date_from, close_date_to):
+            return False
+        if not in_range(ipo.get("allotment_date"), allotment_date_from, allotment_date_to):
+            return False
+        if not in_range(ipo.get("listing_date"), listing_date_from, listing_date_to):
             return False
         return True
 
@@ -498,7 +588,19 @@ async def subscription_history(slug: str):
     return {
         "slug": slug,
         "points": [
-            {"ts": r["ts"].isoformat(), "label": ist_label(r["ts"]), "total": r.get("total")}
+            {
+                "ts": r["ts"].isoformat(),
+                "label": ist_label(r["ts"]),
+                "total": r.get("total"),
+                "qib": r.get("qib"),
+                "snii": r.get("snii"),
+                "bnii": r.get("bnii"),
+                "nii": r.get("nii"),
+                "retail": r.get("retail"),
+                "employee": r.get("employee"),
+                "shareholder": r.get("shareholder"),
+                "source": r.get("source"),
+            }
             for r in rows
         ],
     }
@@ -517,17 +619,28 @@ async def allotment(slug: str, payload: AllotmentIn):
     ipo = await db.ipos.find_one({"slug": slug}, {"_id": 0})
     if not ipo:
         raise HTTPException(status_code=404, detail="IPO not found")
-    sub = payload.subscription_multiple
-    if sub is None:
-        sub = (ipo.get("subscription") or {}).get("total")
+
+    sub_obj = ipo.get("subscription") or {}
+    multiple, ok, err = resolve_category_subscription(
+        payload.category, sub_obj, payload.subscription_multiple
+    )
     result = compute_allotment(
         category=payload.category,
-        subscription_multiple=sub,
+        subscription_multiple=multiple,
         lot_size=payload.lot_size if payload.lot_size is not None else ipo.get("lot_size"),
-        price=payload.price if payload.price is not None else ipo.get("price_band_high"),
+        price=(
+            payload.price
+            if payload.price is not None
+            else (ipo.get("issue_price") or ipo.get("price_band_high"))
+        ),
         lots=payload.lots,
+        category_subscription_missing=not ok,
     )
-    result["used_total_subscription_proxy"] = payload.subscription_multiple is None
+    if err and not result.get("reliable"):
+        result["message"] = err
+    result["used_total_subscription_proxy"] = False
+    result["category_subscription_used"] = multiple
+    result["subscription_source"] = sub_obj.get("source")
     return result
 
 
@@ -536,42 +649,60 @@ async def allotment(slug: str, payload: AllotmentIn):
 # --------------------------------------------------------------------------- #
 AI_SYSTEM = (
     "You are an equity research assistant for Indian IPOs. You will be given the "
-    "verified structured facts we hold about an IPO. Produce a concise, plain-English "
-    "explanation for a retail investor. STRICT RULES: never invent financial numbers, "
-    "revenue, profit, valuation, or subscription figures. If a fact is not in the "
-    "provided data, say it is not available and must be checked in the RHP/DRHP. "
-    "Clearly separate what is a FACT (from provided data / widely-known public info) "
-    "from AI INTERPRETATION. Respond ONLY with strict minified JSON, no markdown."
+    "verified structured facts we hold about an IPO, and optionally links to "
+    "company documents (RHP/DRHP). Produce a concise, plain-English explanation "
+    "for a retail investor. STRICT RULES: never invent financial numbers, "
+    "revenue, profit, valuation, subscription, GMP, or issue size. If a fact is "
+    "not in the provided data, say it is not available and must be checked in "
+    "the RHP/DRHP. Clearly separate what is a FACT (from provided data) from "
+    "AI INTERPRETATION. Respond ONLY with strict minified JSON, no markdown."
 )
 
 
 def _ai_prompt(ipo: dict) -> str:
     g = ipo.get("gmp") or {}
     s = ipo.get("subscription") or {}
+    docs = ipo.get("documents") or []
     facts = {
         "company_name": ipo.get("company_name"),
         "symbol": ipo.get("symbol"),
         "ipo_type": ipo.get("ipo_type"),
         "status": ipo.get("status"),
         "price_band": ipo.get("price_band_text"),
-        "issue_size_crore_estimated": ipo.get("issue_size_crore"),
+        "issue_size_crore": ipo.get("issue_size_crore"),
+        "issue_size_estimated": ipo.get("issue_size_estimated"),
+        "lot_size": ipo.get("lot_size"),
         "open_date": ipo.get("open_date"),
         "close_date": ipo.get("close_date"),
-        "gmp_rupees": g.get("gmp_rupees"),
-        "gmp_percent": g.get("gmp_percent"),
-        "total_subscription_x": s.get("total"),
+        "allotment_date": ipo.get("allotment_date"),
+        "listing_date": ipo.get("listing_date"),
+        "registrar": ipo.get("registrar"),
+        "lead_managers": ipo.get("lead_managers"),
+        "gmp_rupees_unofficial": g.get("gmp_rupees"),
+        "gmp_percent_unofficial": g.get("gmp_percent"),
+        "subscription": {
+            "total": s.get("total"),
+            "qib": s.get("qib"),
+            "snii": s.get("snii"),
+            "bnii": s.get("bnii"),
+            "retail": s.get("retail"),
+            "source": s.get("source"),
+        },
+        "documents": docs,
+        "field_sources": ipo.get("field_sources"),
     }
     schema = (
         '{"what_it_does":str,"how_it_makes_money":str,"where_money_goes":str,'
         '"strengths":[str],"risks":[str],"things_to_verify":[str]}'
     )
     return (
-        "VERIFIED FACTS WE HOLD (may be partial):\n"
+        "VERIFIED FACTS WE HOLD (may be partial — do not invent missing numbers):\n"
         + json.dumps(facts, ensure_ascii=False)
-        + "\n\nUsing these facts plus widely-known public information about this "
-        "company (only if you are confident it is the same company), write the JSON. "
-        "Keep each string field 2-4 sentences. Provide 3-4 strengths, 3-4 risks, and "
-        "3-4 concrete things_to_verify in the RHP/DRHP. "
+        + "\n\nUsing ONLY these facts plus widely-known public information about "
+        "this company (only if you are confident it is the same company), write "
+        "the JSON. Prefer grounding explanations in RHP/DRHP document links when "
+        "provided. Keep each string field 2-4 sentences. Provide 3-4 strengths, "
+        "3-4 risks, and 3-4 concrete things_to_verify in the RHP/DRHP. "
         f"Respond ONLY as minified JSON matching: {schema}"
     )
 
@@ -747,7 +878,7 @@ app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -109,8 +109,10 @@ export default function SettingsScreen() {
             <Row label="IPOs cached" value={String(meta?.count ?? 0)} />
             <Row label="Last updated" value={meta?.last_updated_label ?? "—"} />
             <Txt size={11} color="muted" style={{ marginTop: 8, lineHeight: 16 }}>
-              Live GMP & subscription data is delayed and unofficial. Fields not published by the
-              provider are shown as unavailable rather than estimated.
+              Provider is configured via IPO_DATA_PROVIDER (default: composite =
+              Downstox universe/GMP + NSE category subscription). GMP is unofficial /
+              indicative. Category fields stay unavailable when the source does not
+              publish them — never fabricated.
             </Txt>
           </Card>
         </Section>

@@ -9,12 +9,12 @@ import { makeStyles, useTheme } from "@/src/theme";
 
 const ISSUE_SIZE_OPTIONS = [
   { label: "Any size", value: null },
-  { label: "> ₹100 Cr", value: 100 },
   { label: "> ₹250 Cr", value: 250 },
   { label: "> ₹500 Cr", value: 500 },
   { label: "> ₹1,000 Cr", value: 1000 },
   { label: "> ₹2,000 Cr", value: 2000 },
   { label: "> ₹5,000 Cr", value: 5000 },
+  { label: "> ₹10,000 Cr", value: 10000 },
 ];
 
 const GMP_OPTIONS = [
